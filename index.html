@@ -243,191 +243,142 @@
     `;
 
     const fragmentShaderSource = `
+      #ifdef GL_FRAGMENT_PRECISION_HIGH
+      precision highp float;
+      #else
       precision mediump float;
-
+      #endif
+      
       uniform float u_time;
       uniform vec2 u_resolution;
       varying vec2 v_uv;
-
+      
       float hash(vec2 p) {
         p = fract(p * vec2(123.34, 456.21));
         p += dot(p, p + 45.32);
         return fract(p.x * p.y);
       }
-
+      
       float noise(vec2 p) {
         vec2 i = floor(p);
         vec2 f = fract(p);
         f = f * f * (3.0 - 2.0 * f);
-
+      
         float a = hash(i);
         float b = hash(i + vec2(1.0, 0.0));
         float c = hash(i + vec2(0.0, 1.0));
         float d = hash(i + vec2(1.0, 1.0));
-
+      
         return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
       }
-
+      
       float fbm(vec2 p) {
         float v = 0.0;
         float a = 0.5;
+      
         for (int i = 0; i < 4; i++) {
           v += noise(p) * a;
-          p *= 2.03;
+          p *= 2.02;
           a *= 0.5;
         }
+      
         return v;
       }
-
+      
       float softWave(vec2 uv, float y, float scale, float speed, float width) {
-        float x = uv.x;
         float t = u_time * speed;
-
-        float curve = sin(x * scale + t) * 0.018;
-        curve += sin(x * scale * 0.53 - t * 0.72) * 0.014;
-        curve += sin(x * scale * 1.37 + t * 0.28) * 0.006;
-
-        float line = y + curve;
-        float d = uv.y - line;
-        float body = smoothstep(-width * 0.25, width, d) * (1.0 - smoothstep(width, width * 2.8, d));
-
-        float crest = smoothstep(width * 0.33, 0.0, abs(d));
-
+      
+        float curve = sin(uv.x * scale + t) * 0.018;
+        curve += sin(uv.x * scale * 0.53 - t * 0.72) * 0.014;
+        curve += sin(uv.x * scale * 1.37 + t * 0.28) * 0.006;
+      
+        float d = uv.y - (y + curve);
+      
+        float body = smoothstep(-width * 0.35, width, d) *
+                     (1.0 - smoothstep(width, width * 3.0, d));
+      
+        float crest = 1.0 - smoothstep(0.0, width * 0.75, abs(d));
+      
         return body * 0.65 + crest * 0.45;
       }
-
+      
       float foamWave(vec2 uv, float y, float scale, float speed, float width) {
         float t = u_time * speed;
+      
         float curve = sin(uv.x * scale + t) * 0.018;
         curve += sin(uv.x * scale * 0.5 - t * 0.65) * 0.014;
-
-        float line = y + curve;
-        float d = abs(uv.y - line);
+      
+        float d = abs(uv.y - (y + curve));
         float broken = fbm(vec2(uv.x * 18.0 + u_time * 0.18, uv.y * 22.0));
-
-        float mask = smoothstep(width, 0.0, d);
-        mask *= smoothstep(0.24, 0.86, broken);
+      
+        float mask = 1.0 - smoothstep(0.0, width, d);
+        mask *= smoothstep(0.28, 0.82, broken);
+      
         return mask;
       }
-
+      
       void main() {
         vec2 uv = v_uv;
-
+      
         vec3 farSea     = vec3(0.20, 0.13, 0.35);
         vec3 midSea     = vec3(0.38, 0.18, 0.42);
         vec3 warmSea    = vec3(0.82, 0.24, 0.20);
         vec3 hotOrange  = vec3(1.00, 0.35, 0.08);
         vec3 golden     = vec3(1.00, 0.70, 0.16);
         vec3 darkTrough = vec3(0.12, 0.08, 0.22);
-        vec3 foam       = vec3(1.00, 0.73, 0.62);
-
+        vec3 foam       = vec3(1.00, 0.76, 0.64);
+      
         vec3 color = mix(farSea, midSea, smoothstep(0.0, 0.55, uv.y));
-        color = mix(color, warmSea, smoothstep(0.45, 1.0, uv.y) * 0.52);
-        color = mix(color, hotOrange, smoothstep(0.72, 1.0, uv.y) * 0.25);
-
+        color = mix(color, warmSea, smoothstep(0.36, 1.0, uv.y) * 0.62);
+        color = mix(color, hotOrange, smoothstep(0.58, 1.0, uv.y) * 0.34);
+      
         float texture = fbm(vec2(uv.x * 5.0, uv.y * 18.0 - u_time * 0.16));
         float fineTexture = fbm(vec2(uv.x * 18.0 + u_time * 0.08, uv.y * 42.0));
-        color = mix(color, color + vec3(0.07, 0.02, 0.02), texture * 0.22);
-        color = mix(color, color - vec3(0.05, 0.03, 0.02), fineTexture * 0.16);
-
+      
+        color += vec3(0.07, 0.025, 0.015) * texture * 0.24;
+        color -= vec3(0.04, 0.025, 0.018) * fineTexture * 0.14;
+      
         float w1 = softWave(uv, 0.18, 17.0, 0.42, 0.030);
         float w2 = softWave(uv, 0.32, 14.0, 0.36, 0.038);
         float w3 = softWave(uv, 0.48, 11.5, 0.30, 0.050);
         float w4 = softWave(uv, 0.66, 9.2,  0.25, 0.065);
         float w5 = softWave(uv, 0.84, 7.4,  0.22, 0.078);
-
+      
         float waves = w1 * 0.45 + w2 * 0.58 + w3 * 0.72 + w4 * 0.9 + w5;
-
-        color = mix(color, darkTrough, waves * 0.28);
-
-        color = mix(color, hotOrange, waves * 0.17);
-        color = mix(color, golden, waves * 0.10);
-
-        float center = 1.0 - smoothstep(0.0, 0.12 + uv.y * 0.15, abs(uv.x - 0.5));
-        float vertical = smoothstep(0.02, 0.92, uv.y) * (1.0 - smoothstep(0.88, 1.0, uv.y));
-        float broken = fbm(vec2(uv.x * 12.0, uv.y * 58.0 - u_time * 0.65));
-        float reflection = center * vertical * smoothstep(0.36, 0.95, broken);
-
-        color = mix(color, golden, reflection * 0.78);
-        color = mix(color, hotOrange, reflection * 0.22);
-
+      
+        color = mix(color, darkTrough, waves * 0.25);
+        color = mix(color, hotOrange, waves * 0.22);
+        color = mix(color, golden, waves * 0.14);
+      
+        float center = 1.0 - smoothstep(0.03, 0.28 + uv.y * 0.18, abs(uv.x - 0.5));
+        float vertical = smoothstep(0.04, 0.55, uv.y) * (1.0 - smoothstep(0.96, 1.0, uv.y));
+        float broken = fbm(vec2(uv.x * 10.0, uv.y * 48.0 - u_time * 0.55));
+      
+        float reflection = center * vertical * smoothstep(0.24, 0.78, broken);
+      
+        color = mix(color, golden, reflection * 0.95);
+        color = mix(color, hotOrange, reflection * 0.38);
+      
         float foamMask = 0.0;
         foamMask += foamWave(uv, 0.49, 12.0, 0.32, 0.017) * 0.35;
         foamMask += foamWave(uv, 0.67, 9.4,  0.27, 0.023) * 0.55;
         foamMask += foamWave(uv, 0.85, 7.2,  0.22, 0.032) * 0.85;
-
-        float shoreLine =
-            1.78 +
-            sin(uv.x * 7.0 - u_time * 0.28) * 0.018 +
-            sin(uv.x * 15.0 + u_time * 0.16) * 0.006;
-
-        vec3 wetSand = vec3(0.08, 0.04, 0.08);
-        vec3 drySand = vec3(0.04, 0.04, 0.00);
-
-        float wetZone =
-            smoothstep(shoreLine - 0.00, shoreLine + 0.00, uv.y);
-
-        float shallowWater =
-            smoothstep(shoreLine - 0.00, shoreLine + 0.0, uv.y) *
-            (1.0 - smoothstep(shoreLine + 0.0, shoreLine + 0.0, uv.y));
-
-        float sandBlend =
-            smoothstep(shoreLine - 0.0, shoreLine + 0.0, uv.y);
-
-        vec3 shallowColor =
-            mix(
-                wetSand,
-                drySand,
-                smoothstep(shoreLine + 0.12, shoreLine + 0.18, uv.y)
-            );
-
-        shallowColor = mix(
-            shallowColor,
-            golden,
-            center * 0.28
-        );
-
-        color = mix(
-            color,
-            shallowColor,
-            sandBlend * 0.92
-        );
-
-        color = mix(
-            color,
-            foam,
-            clamp(foamMask, 0.0, 1.0) * 0.38
-        );
-
-        color = floor(color * 28.0) / 28.0;
-
-        float topFade =
-            smoothstep(0.0, 0.05, uv.y);
-
-        //float topFade = 1.0;
-
-        float bottomFade =
-            1.0 -
-            smoothstep(
-                shoreLine + 0.18,
-                shoreLine + 0.55,
-                uv.y
-            );
-
-        float transparentTide =
-            shallowWater * 0.18;
-
-        float alpha =
-            max(bottomFade, transparentTide);
-
-        alpha *= topFade;
-
-        gl_FragColor = vec4(
-            color,
-            clamp(alpha, 0.0, 1.0)
-        );
+      
+        color = mix(color, foam, clamp(foamMask, 0.0, 1.0) * 0.36);
+      
+        // Мягкий pixel-art / posterize, но не слишком грубый для телефонов
+        color = floor(color * 36.0) / 36.0;
+      
+        float topFade = smoothstep(0.0, 0.04, uv.y);
+      
+        // Вместо shoreLine = 1.78, который вне UV-диапазона 0..1
+        float bottomFade = 1.0 - smoothstep(0.94, 1.0, uv.y);
+      
+        float alpha = topFade * bottomFade;
+      
+        gl_FragColor = vec4(color, clamp(alpha, 0.0, 1.0));
       }
-    `;
+      `;
 
     function createShader(gl, type, source) {
       const shader = gl.createShader(type);
